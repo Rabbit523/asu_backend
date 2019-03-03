@@ -1,0 +1,13 @@
+.git
+.idea
+.vscode
+.env
+vendor/
+node_modules/
+public/js/
+public/css/
+storage/framework/cache/**
+storage/framework/sessions/**
+storage/framework/views/**
+Dockerfile
+yarn-error.log

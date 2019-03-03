@@ -1,0 +1,21 @@
+.modal {
+  text-align: center;
+  padding: 0!important;
+}
+
+.modal:before {
+  content: '';
+  display: inline-block;
+  vertical-align: middle;
+  margin: -2px;
+  height: 100%;
+}
+
+.modal-dialog {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.select2 {
+  width: 100% !important;
+}

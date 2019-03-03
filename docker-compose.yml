@@ -1,0 +1,112 @@
+version: "3.4"
+
+volumes:
+  minio_data:
+  dbdata:
+
+networks:
+  backend:
+    driver: ${NETWORKS_DRIVER}
+    ipam:
+      config:
+        - subnet: 172.18.0.0/24
+
+services:
+  mysql:
+    image: mysql:latest
+    command: mysqld --default-authentication-plugin=mysql_native_password
+    container_name: mysql
+    volumes:
+      - dbdata:/var/lib/mysql
+    networks:
+      backend:
+        ipv4_address: 172.18.0.8
+    ports:
+    - published: ${DB_PORT:-3306}
+      target: 3306  
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE}
+      MYSQL_USER: ${DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD}
+
+  # The Application
+  # We'll use minio as a local AWS S3 clone
+  minio:
+    image: minio/minio
+    ports:
+      - ${MINIO_PORT:-9000}:9000
+    volumes:
+      - minio_data:/data
+      - ./bin/minio-entrypoint.sh:/usr/bin/minio-entrypoint.sh
+    entrypoint: /usr/bin/minio-entrypoint.sh
+    command: server /data
+    networks:
+      backend:
+        ipv4_address: 172.18.0.9
+    environment:
+      MINIO_ACCESS_KEY: ${AWS_KEY}
+      MINIO_SECRET_KEY: ${AWS_SECRET}
+
+  # This container runs the test suite of the app:
+  test: &app
+    image: icalialabs/asu:development
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    volumes:
+    # Mount our app code directory (".") into our app containers at the
+    # "/usr/src" folder:
+    - .:/usr/src
+  
+  # Keep the stdin open, so we can attach to our app container's process
+    # and do things such as byebug, etc:
+    stdin_open: true
+
+    # Enable sending signals (CTRL+C, CTRL+P + CTRL+Q) into the container:
+    tty: true
+    
+    networks:
+      backend:
+        ipv4_address: 172.18.0.5
+    depends_on:
+    - mysql
+    - minio
+    entrypoint: /usr/src/bin/dev-entrypoint
+    environment: &app_env
+      AWS_S3_ENDPOINT_URL: ${MINIO_ENDPOINT}
+      AWS_ACCESS_KEY_ID: ${AWS_KEY}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET}
+      S3_BUCKET_NAME: ${AWS_BUCKET}
+    env_file: .env
+    
+  selenium:
+    image: selenium/standalone-chrome
+    ports:
+      - "${SELENIUM_PORT-4444}:4444"
+    expose:
+      - ${SELENIUM_PORT-4444}
+    volumes:
+      - /dev/shm:/dev/shm
+    networks:
+      backend:
+        ipv4_address: 172.18.0.7
+
+  # This container runs the main web process of the app:
+  web:
+    <<: *app
+    depends_on:
+    - mysql
+    - minio
+    ports:
+      - ${APP_WEB_PORT:-8000}:8000
+      - ${MAIL_PORT:-465}:465
+    labels:
+      com.icalialabs.plis.group: web
+    networks:
+      backend:
+        ipv4_address: 172.18.0.6
+    links:
+      - selenium
+    env_file: .env
